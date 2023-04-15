@@ -1,4 +1,9 @@
-﻿using RabbitMQ.Client;
+﻿using DevFreela.Payments.API.Models;
+using DevFreela.Payments.API.Services;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System.Text;
+using System.Text.Json;
 
 namespace DevFreela.Payments.API.Consumers
 {
@@ -32,7 +37,32 @@ namespace DevFreela.Payments.API.Consumers
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            throw new NotImplementedException();
+            var consumer = new EventingBasicConsumer(_channel);
+
+            // Definição de consumo de mensagem
+            consumer.Received += (sender, args) =>
+            {
+                var byteArry = args.Body.ToArray();
+                var paymentInfoJson = Encoding.UTF8.GetString(byteArry);
+
+                var paymentInfo = JsonSerializer.Deserialize<PaymentInfoInputModel>(paymentInfoJson);
+                ProcessPayment(paymentInfo);
+
+                _channel.BasicAck(args.DeliveryTag, false);
+            };
+
+            _channel.BasicConsume(QUEUE, false, consumer);
+
+            return Task.CompletedTask;
+        }
+
+        private void ProcessPayment(PaymentInfoInputModel model)
+        {
+            using(var scope = _serviceProvider.CreateScope())
+            {
+                var paymentService = scope.ServiceProvider.GetRequiredService<IPaymentService>();
+                paymentService.Process(model);
+            }
         }
     }
 }
